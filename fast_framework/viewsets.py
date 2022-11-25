@@ -4,4 +4,5 @@ class View:
     ...
 
 
-class 
+class ViewSet(View):
+    ...

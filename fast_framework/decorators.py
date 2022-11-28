@@ -1,55 +1,32 @@
 from enum import Enum
-from typing import List, Dict, Any, Callable, Optional, Union
 import functools
-from enum import Enum
-from typing import (
-    Any,
-    Callable,
-    Coroutine,
-    Dict,
-    List,
-    Optional,
-    Sequence,
-    Set,
-    Tuple,
-    Type,
-    Union,
-)
+import inspect
 
 from fastapi import params
 from fastapi.datastructures import Default, DefaultPlaceholder
-
 from fastapi.encoders import DictIntStrAny, SetIntStr
-from fastapi.utils import (
-    generate_unique_id,
-)
-from pydantic import BaseModel
-from pydantic.error_wrappers import ErrorWrapper, ValidationError
-from pydantic.fields import ModelField, Undefined
-from starlette import routing
-from starlette.concurrency import run_in_threadpool
-from starlette.exceptions import HTTPException
-from starlette.requests import Request
+from fastapi.utils import generate_unique_id
+
 from starlette.responses import JSONResponse, Response
-from starlette.routing import BaseRoute, Match
+from starlette.routing import BaseRoute
 from starlette.routing import Mount as Mount  # noqa
-from starlette.routing import (
-    compile_path,
-    get_name,
-    request_response,
-    websocket_session,
-)
 
 from fastapi.routing import APIRoute
+from typing import Any, Callable, Dict, List, Optional, Union, TypeVar, Sequence, Type, Awaitable
+from typing_extensions import ParamSpec
+
+P = ParamSpec("P")
+R = TypeVar("R")
+T = TypeVar("T")
 
 
-def compatible_method(func: Callable[[Any], None]):
+def compatible_method(func: Callable[P, R]) -> Callable[P, R]:
     @functools.wraps(func)
-    def wrapper(*args, **kwargs) -> Any:
+    def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
         return func(*args, **kwargs)
 
     @functools.wraps(func)
-    async def async_wrapper(*args, **kwargs) -> Any:
+    async def async_wrapper(*args: P.args, **kwargs: P.kwargs) -> Awaitable[Callable[P, R]]:
         return await func(*args, **kwargs)
 
     return async_wrapper if inspect.iscoroutinefunction(func) else wrapper
@@ -76,28 +53,26 @@ def actions(
     response_model_exclude_none: bool = False,
     include_in_schema: bool = True,
     response_class: Union[Type[Response], DefaultPlaceholder] = Default(JSONResponse),
-    name: Optional[str] = None,
     route_class_override: Optional[Type[APIRoute]] = None,
     callbacks: Optional[List[BaseRoute]] = None,
     openapi_extra: Optional[Dict[str, Any]] = None,
     generate_unique_id_function: Union[
         Callable[[APIRoute], str], DefaultPlaceholder
     ] = Default(generate_unique_id),
-):
-    """ """
-    rename = name
-    class Action:
-        def __init__(self, func: Callable[[Any], None]) -> None:
-            self.func: Callable[[Any], None] = func
+) -> Callable[[T], T]:
+    methods = ['get'] if (methods is None) else methods
+    methods = [method.lower() for method in methods]
+    class Action():
+        def __init__(self, func: Callable[..., Any]) -> None:
+            self.func: Callable[..., Any] = func
 
-        def __set_name__(self, owner, name):
+        def __set_name__(self, owner: T, name: str) -> None:
             setattr(owner, name, compatible_method(self.func))
 
             _actions = getattr(owner, '_actions')
-            _actions[self.func.__name__] = {
-                'path': path,
-                'methods': methods,
-                'schema_in_annotation': dict(
+            _actions[self.func.__name__] = dict(
+                    methods=methods,
+                    path=path,
                     response_model=response_model,
                     status_code=status_code,
                     tags=tags,
@@ -116,14 +91,13 @@ def actions(
                     response_model_exclude_none=response_model_exclude_none,
                     include_in_schema=include_in_schema,
                     response_class=response_class,
-                    name=rename,
+                    name=name,
                     route_class_override=route_class_override,
                     callbacks=callbacks,
                     openapi_extra=openapi_extra,
                     generate_unique_id_function=generate_unique_id_function,
-                ),
-            }
-            setattr(owner, '_actions', _actions)
+                )
 
+            setattr(owner, '_actions', _actions)
 
     return Action
